@@ -1,0 +1,193 @@
+openapi: 3.0.3
+info:
+  title: Leads API
+  version: 2.0.0
+  description: >-
+    Contrato funcional de Leads API v2. Los datos viven en memoria durante la
+    ejecución del proceso. No se incluyen autenticación, persistencia,
+    idempotencia ni detección de duplicados.
+servers:
+  - url: http://localhost:3000
+    description: Ejecución local
+paths:
+  /leads:
+    post:
+      operationId: createLead
+      summary: Crear un lead
+      description: >-
+        FR-01, FR-03. Crea un lead. El servidor aplica trim a name y source,
+        cuenta puntos de código Unicode después de normalizar, valida los
+        límites BR-01, y almacena y devuelve los valores normalizados. Genera
+        id; status y score son gestionados por el servidor (BR-02). Solo se
+        admite application/json; las propiedades adicionales se rechazan.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateLeadRequest'
+      responses:
+        '201':
+          description: Lead creado (FR-01, BR-02).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Lead'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaTypeError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /leads/{id}/score:
+    post:
+      operationId: assignLeadScore
+      summary: Asignar score y recalcular clasificación
+      description: >-
+        FR-02, FR-03. Asigna un entero de 0 a 100, actualiza score y recalcula
+        status según BR-03, BR-04 y BR-05. La clasificación puede descender.
+        Un id sin lead asociado produce 404 (BR-06).
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Identificador generado por el servidor (BR-02).
+          schema:
+            type: string
+            minLength: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssignScoreRequest'
+      responses:
+        '200':
+          description: Lead actualizado y clasificado (FR-02, BR-04, BR-05).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Lead'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '404':
+          $ref: '#/components/responses/LeadNotFoundError'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaTypeError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+components:
+  schemas:
+    CreateLeadRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+        - source
+      properties:
+        name:
+          type: string
+          description: >-
+            BR-01. El servidor aplica trim y valida de 1 a 100 puntos de
+            código Unicode en el valor normalizado. El valor normalizado se
+            almacena y devuelve. OpenAPI 3.0 no define una transformación
+            portable de trim previa a la validación; este límite se cumple
+            mediante lógica de aplicación.
+        source:
+          type: string
+          description: >-
+            BR-01. Texto libre, sin enumeración. El servidor aplica trim y
+            valida de 1 a 50 puntos de código Unicode en el valor normalizado.
+            El valor normalizado se almacena y devuelve. OpenAPI 3.0 no define
+            una transformación portable de trim previa a la validación; este
+            límite se cumple mediante lógica de aplicación.
+    AssignScoreRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - score
+      properties:
+        score:
+          type: integer
+          minimum: 0
+          maximum: 100
+          description: BR-03. Entero entre 0 y 100 inclusive.
+    Lead:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - name
+        - source
+        - status
+        - score
+      properties:
+        id:
+          type: string
+          minLength: 1
+          description: Identificador generado por el servidor (BR-02).
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+          description: BR-01. Valor normalizado, entre 1 y 100 puntos de código Unicode.
+        source:
+          type: string
+          minLength: 1
+          maxLength: 50
+          description: BR-01. Valor normalizado, entre 1 y 50 puntos de código Unicode.
+        status:
+          type: string
+          enum:
+            - new
+            - qualified
+            - vip
+          description: Clasificación derivada del score según BR-04 y BR-05.
+        score:
+          type: integer
+          minimum: 0
+          maximum: 100
+          description: Score actual del lead (BR-03).
+    Error:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+          enum:
+            - VALIDATION_ERROR
+            - LEAD_NOT_FOUND
+            - UNSUPPORTED_MEDIA_TYPE
+            - INTERNAL_ERROR
+        message:
+          type: string
+          minLength: 1
+          description: Descripción del error.
+  responses:
+    ValidationError:
+      description: Solicitud inválida; campos, tipos o valores no admitidos (BR-06).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    LeadNotFoundError:
+      description: No existe el lead con el ID indicado (BR-06).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    UnsupportedMediaTypeError:
+      description: Content-Type no admitido; se requiere application/json (BR-06).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    InternalError:
+      description: Fallo inesperado (BR-06).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
